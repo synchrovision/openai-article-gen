@@ -10,26 +10,30 @@ $tasks=[
 	'c'=>[
 		'loop'=>function($h,$opts){
 			$concept=$opts['c']?:'AIが実現する未来';
-			$results=$h->do_prompt(sprintf(
+			$prompt=sprintf(
 				"「%s」というコンセプトで、ブログ記事のカテゴリを%d個考えてください。それぞれのカテゴリに半角英数20文字以内のスラッグを併せて書いてください。",
 				$concept,
 				$opts['n']??5
-			));
+			);
 			$id=(int)($opts['first-id']??1);
 			$csv=fopen('csv/categories.csv','w');
 			fputcsv($csv,['id','name','slug','parent']);
 			yield sprintf("Generating categories for concept '%s'",$concept);
-			foreach(explode("\n",$results) as $line){
-				if(
-					preg_match("/^(\d+\.?)?[\s「\"]*(.+?)[\s\-: 　」\"]*([\w\-]+)$/u",$line,$matches) || 
-					preg_match("/^(\d+\.?)?[\s「\"]*(.+?)[\s\-: 　」\"]*\(([\w\-]+)\)$/u",$line,$matches) || 
-					preg_match("/^(\d+\.?)?[\s「\"]*(.+?)[\s\-: 　」\"]*\(slug: ([\w\-]+)\)$/u",$line,$matches)
-				){
-					fputcsv($csv,[$id++,$matches[2],str_replace('-','_',$matches[3]),0]);
+			$success=false;
+			while(!$success){
+				$results=$h->do_prompt($prompt);
+				foreach(explode("\n",$results) as $line){
+					if(empty($line)){continue;}
+					if(!empty($item=parse_item_list_line($line))){
+						fputcsv($csv,[$id++,$item['name'],$item['slug'],0]);
+					}
+					else{
+						yield sprintf("Can not parse line '%s'",$line);
+						yield sprintf("Redo generating categories for category '%s'",$concept);
+						continue 2;
+					}
 				}
-				else{
-					yield sprintf("Can not parse line '%s'",$line);
-				}
+				$success=true;
 			}
 			fclose($csv);
 			yield "Finish! Generated categories.csv";
@@ -57,18 +61,21 @@ $tasks=[
 					$cat,
 					$opts['n']??5
 				);
-				$results=$h->do_prompt($prompt);
-				foreach(explode("\n",$results) as $line){
-					if(
-						preg_match("/^(\d+\.?)?[\s「\"]*(.+?)[\s\-: 　」\"]*([\w\-]+)$/u",$line,$matches) || 
-						preg_match("/^(\d+\.?)?[\s「\"]*(.+?)[\s\-: 　」\"]*\(([\w\-]+)\)$/u",$line,$matches) || 
-						preg_match("/^(\d+\.?)?[\s「\"]*(.+?)[\s\-: 　」\"]*\(slug: ([\w\-]+)\)$/u",$line,$matches)
-					){
-						fputcsv($csv,[$id++,$category_id,$matches[2],str_replace('-','_',$matches[3])]);
+				$success=false;
+				while(!$success){
+					$results=$h->do_prompt($prompt);
+					foreach(explode("\n",$results) as $line){
+						if(empty($line)){continue;}
+						if(!empty($item=parse_item_list_line($line))){
+							fputcsv($csv,[$id++,$category_id,$item['name'],$item['slug']]);
+						}
+						else{
+							yield sprintf("Can not parse line '%s'",$line);
+							yield sprintf("Redo generating titles for category '%s'",$cat);
+							continue 2;
+						}
 					}
-					else{
-						yield sprintf("Can not parse line '%s'",$line);
-					}
+					$success=true;
 				}
 			}
 			fclose($csv);
@@ -207,6 +214,16 @@ function get_headings_data(){
 		$data[$item['id']][]=$item['heading'];
 	}
 	return $data;
+}
+function parse_item_list_line($line){
+	if(
+		preg_match("/^(\d+\.?)?[\s「\"]*(.+?)[\s\-: 　」\"]*([\w\-]+)\s*$/u",$line,$matches) || 
+		preg_match("/^(\d+\.?)?[\s「\"]*(.+?)[\s\-: 　」\"]*\(([\w\-]+)\)\s*$/u",$line,$matches) || 
+		preg_match("/^(\d+\.?)?[\s「\"]*(.+?)[\s\-: 　」\"]*\(slug: ([\w\-]+)\)\s*$/u",$line,$matches)
+	){
+		return ['name'=>$matches[2],'slug'=>str_replace('-','_',$matches[3])];
+	}
+	return null;
 }
 class OpenAiHandler{
 	private $ch;
