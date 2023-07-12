@@ -1,0 +1,6 @@
+*
+!/.gitignore
+!/.env.sample
+!/README.md
+!/gen.php
+!/composer.json
